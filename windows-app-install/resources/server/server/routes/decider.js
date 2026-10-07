@@ -1,0 +1,19 @@
+import { PASS } from "./table.js";
+const MAX_KEY_LENGTH = 512;
+export function createDeciderRoutes(deps) {
+    return async ({ req, res, path, method, json, readBody }) => {
+        if (path !== "/api/decider/test" || method !== "POST")
+            return PASS;
+        const body = await readBody(req, 8192);
+        if (body?.key !== undefined && typeof body.key !== "string")
+            return json(res, 400, { error: "key must be a string" });
+        const draft = typeof body?.key === "string" ? body.key.trim() : "";
+        if (draft.length > MAX_KEY_LENGTH)
+            return json(res, 400, { error: "That does not look like an API key." });
+        res.setHeader("cache-control", "no-store");
+        const result = await deps.decider.testKey(draft ? { key: draft } : {});
+        if (result.ok)
+            return json(res, 200, { ok: true, latencyMs: result.latencyMs });
+        return json(res, 200, { ok: false, reason: result.reason, ...(result.status ? { status: result.status } : {}) });
+    };
+}

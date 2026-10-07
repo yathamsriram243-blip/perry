@@ -1,0 +1,264 @@
+import { approvalModeFor } from "../shared/approval-mode.js";
+import { cronScheduleLabel } from "../shared/cron-label.js";
+/** The first paragraph of a SOUL.md-style persona, capped at 240 characters
+ * so a settings-dialog card never renders a full standing-instructions
+ * document inline. */
+export function soulLead(soul) {
+    const trimmed = (soul ?? "").trim();
+    if (!trimmed)
+        return "";
+    const paragraph = (trimmed.split(/\r?\n\s*\r?\n/)[0] ?? trimmed).trim();
+    return paragraph.length > 240 ? `${paragraph.slice(0, 240).trimEnd()}…` : paragraph;
+}
+function lowerFirst(value) {
+    return value.length ? value[0].toLowerCase() + value.slice(1) : value;
+}
+function time(at, timeZone) {
+    return new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone });
+}
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** "09:05" → "9:05 AM" — the daily schedule's wall-clock time as a person
+ * would say it, with no timezone suffix (the Overview is read in the
+ * timezone it was built for). */
+function clockTime(hhmm) {
+    const [h = 0, m = 0] = hhmm.split(":").map((part) => Number.parseInt(part, 10) || 0);
+    return new Date(Date.UTC(2000, 0, 1, h, m)).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: "UTC",
+    });
+}
+/** The schedule as the opening phrase of a Does line — "Every 5 minutes",
+ * "Every weekday at 9:00 AM", "Once on September 5 at 12:00 PM". The
+ * approval card's scheduleText() carries the anchor instant and timezone
+ * name because a card must be exact; a plain-language overview must not. */
+function schedulePhrase(schedule, timeZone) {
+    if (schedule.type === "cron")
+        return cronScheduleLabel(schedule);
+    if (schedule.type === "once") {
+        const date = new Date(schedule.at).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone });
+        return `Once on ${date} at ${time(schedule.at, timeZone)}`;
+    }
+    if (schedule.type === "interval") {
+        const minutes = schedule.everyMinutes;
+        if (minutes < 60)
+            return `Every ${minutes} minute${minutes === 1 ? "" : "s"}`;
+        if (minutes === 60)
+            return "Every hour";
+        if (minutes % 60 === 0)
+            return `Every ${minutes / 60} hours`;
+        return `Every ${Math.floor(minutes / 60)} hour${Math.floor(minutes / 60) === 1 ? "" : "s"} ${minutes % 60} minutes`;
+    }
+    const days = schedule.weekdays;
+    const at = ` at ${clockTime(schedule.time)}`;
+    if (days.length === 7)
+        return `Every day${at}`;
+    if (days.join(",") === "1,2,3,4,5")
+        return `Every weekday${at}`;
+    if (days.length === 1)
+        return `Weekly on ${DAY_NAMES[days[0]]}${at}`;
+    return `${days.map((day) => DAY_NAMES[day]).join(", ")}${at}`;
+}
+/** The most recent run for a routine, by (finishedAt ?? startedAt ??
+ * scheduledFor) — not merely the first match in `runs`, since callers may
+ * hand this an unsorted or multi-routine list. */
+function latestRunFor(runs, routineId) {
+    let best;
+    let bestAt = -Infinity;
+    for (const run of runs) {
+        if (run.routineId !== routineId)
+            continue;
+        const at = run.finishedAt ?? run.startedAt ?? run.scheduledFor;
+        if (at > bestAt) {
+            bestAt = at;
+            best = run;
+        }
+    }
+    return best;
+}
+function doesLines(facts) {
+    const lines = [];
+    for (const routine of facts.routines) {
+        if (!routine.enabled) {
+            lines.push(`Paused: ${routine.name}.`);
+            continue;
+        }
+        const nextRun = routine.nextRunAt != null ? ` Next run ${time(routine.nextRunAt, facts.timeZone)}.` : "";
+        const latest = latestRunFor(facts.runs, routine.id);
+        const at = latest ? latest.finishedAt ?? latest.startedAt ?? latest.scheduledFor : undefined;
+        const lastRun = latest ? ` Last run ${latest.status} at ${time(at, facts.timeZone)}.` : "";
+        lines.push(`${schedulePhrase(routine.schedule, facts.timeZone)}: ${routine.name}.${nextRun}${lastRun}`);
+    }
+    for (const skill of facts.skills) {
+        if (!skill.enabled)
+            continue;
+        lines.push(`Knows how to ${lowerFirst(skill.description || skill.name)}.`);
+    }
+    for (const webhook of facts.webhooks) {
+        if (!webhook.enabled)
+            continue;
+        lines.push(`Listens for “${webhook.name}” webhooks.`);
+    }
+    return lines;
+}
+/** The connected-apps facts for the route: reads the inventory only when a
+ * connector is configured and the credential store was readable, and treats
+ * a failing read (connector down, token rejected) as "unverified" rather
+ * than letting it fail the whole Overview. `read` is injected so the
+ * fallback is unit-testable without a live connector. */
+export async function connectedAppsFacts(configured, availability, read) {
+    let authoritative = availability !== "unreadable";
+    let services = [];
+    if (configured && authoritative) {
+        try {
+            services = Object.entries(await read())
+                .filter(([, state]) => state.connected)
+                .map(([slug]) => slug);
+        }
+        catch {
+            authoritative = false;
+        }
+    }
+    return { configured, authoritative, services };
+}
+/** Whether this bot could use connected apps at all: apps on for the bot,
+ * a connector configured, and an engine that mounts the Composio MCP. */
+function couldUseApps(facts) {
+    return facts.bot.composio !== false && facts.connectedApps.configured && Boolean(facts.engine?.composioMcp);
+}
+/** Summarize a bot's connectorTools record for the Overview. Undefined in,
+ * undefined out: a bot with no record keeps legacy all-tools behavior and
+ * the field stays off the wire. An explicit record — even an empty one —
+ * becomes a (possibly empty) list, sorted by slug so both phones and the
+ * web dialog render it in one deterministic order. */
+export function grantsSummary(connectorTools) {
+    if (connectorTools === undefined)
+        return undefined;
+    return Object.entries(connectorTools)
+        .map(([slug, grant]) => {
+        if (grant.tools === "*")
+            return { slug, level: "all", toolCount: 0 };
+        if (grant.tools.length > 0)
+            return { slug, level: "partial", toolCount: grant.tools.length };
+        return { slug, level: "none", toolCount: 0 };
+    })
+        .sort((a, b) => (a.slug < b.slug ? -1 : 1));
+}
+function computerReach(computer, cloudHome = false) {
+    // A Cloud home never offers either; say so rather than list a preference
+    // that every task there refuses.
+    const unavailable = cloudHome ? ", which isn't available on My Cloud" : "";
+    switch (computer) {
+        case "cloud":
+            return "Computer preference: cloud computer.";
+        case "vm":
+            return `Computer preference: Local VM${unavailable}.`;
+        case "local":
+            return `Computer preference: this computer${unavailable}.`;
+        case "browser":
+            return "Computer preference: browser only.";
+        case "off":
+            return null;
+        default:
+            return "Computer preference: Auto; availability is checked when a task starts.";
+    }
+}
+function reachesLines(facts) {
+    const lines = [];
+    const computer = computerReach(facts.bot.computer, facts.cloudHome);
+    if (computer)
+        lines.push(computer);
+    lines.push(facts.bot.cwd ? `Works in ${facts.bot.cwd}.` : "Works in its private workspace.");
+    const apps = facts.connectedApps;
+    // Only a bot that could actually use apps gets an apps line here. When it
+    // could, the inventory decides: verified and non-empty → list them;
+    // unverified → say so rather than guess either way.
+    if (couldUseApps(facts) && apps.authoritative && apps.services.length > 0) {
+        const count = apps.services.length;
+        lines.push(`Can use ${count} connected app${count === 1 ? "" : "s"}: ${apps.services.join(", ")}.`);
+    }
+    else if (couldUseApps(facts) && !apps.authoritative) {
+        lines.push("Connected apps could not be checked.");
+    }
+    if (facts.browserEnabled && facts.engine?.browserMcp && facts.bot.browser !== false && facts.bot.computer !== "off")
+        lines.push("Has the built-in browser.");
+    if (facts.engine?.agentsMcp && facts.sectionPeers > 0 && facts.bot.peers?.length !== 0) {
+        const scope = facts.bot.chiefOfStaff && facts.bot.managedSections?.length ? "its allowed teams" : "its section";
+        lines.push(`Can talk to ${facts.sectionPeers} other bot${facts.sectionPeers === 1 ? "" : "s"} in ${scope}.`);
+    }
+    if (facts.bot.chiefOfStaff)
+        lines.push("Coordinates its section as Chief of Staff.");
+    if (facts.bot.chiefOfStaff && facts.bot.managedSections?.length) {
+        lines.push(`May also coordinate these teams: ${facts.bot.managedSections.map(name => name || "General").join(", ")}.`);
+    }
+    return lines;
+}
+function wontLines(facts) {
+    const lines = [];
+    const mode = approvalModeFor(facts.bot);
+    if (mode === "ask")
+        lines.push("Command approvals use Ask mode; saved permissions and provider rules still apply.");
+    if (mode === "custom")
+        lines.push("Command approvals follow the provider's custom configuration.");
+    if (facts.bot.peers?.length === 0)
+        lines.push("Cannot initiate contact with other bots.");
+    else if (mode !== "full" && facts.bot.approvePeerComms)
+        lines.push("Asks before contacting other bots.");
+    // "Has no connected apps." is definite when apps are off for this bot,
+    // not configured, or unsupported by its engine — no inventory needed. Only
+    // the "configured but nothing connected" case rests on the inventory, so
+    // only that case requires it to be authoritative.
+    if (!couldUseApps(facts) || (facts.connectedApps.authoritative && facts.connectedApps.services.length === 0)) {
+        lines.push("Has no connected apps.");
+    }
+    if (facts.bot.computer === "off")
+        lines.push("Can't use a computer.");
+    if (!facts.routines.some((routine) => routine.enabled))
+        lines.push("Won't act on a schedule.");
+    if (mode !== "full")
+        lines.push("Profile proposal cards require your approval.");
+    return lines;
+}
+export function buildBotOverview(facts) {
+    return {
+        who: {
+            name: facts.bot.name,
+            title: facts.bot.title,
+            blurb: facts.bot.description,
+            soulLead: soulLead(facts.bot.soul),
+        },
+        does: doesLines(facts),
+        reaches: reachesLines(facts),
+        wont: wontLines(facts),
+        recent: facts.recent,
+        grants: grantsSummary(facts.bot.connectorTools),
+        setup: setupSteps(facts),
+    };
+}
+const DEFAULT_BOT_NAMES = /^(new bot|bot|untitled)(\s*\d+)?$/i;
+/** Optional customization ideas. Every step is derived from the same facts
+ * the sentences use, so "done" here can never disagree with "Can reach". */
+export function setupSteps(facts) {
+    const named = facts.bot.name.trim() !== "" && !DEFAULT_BOT_NAMES.test(facts.bot.name.trim());
+    const described = facts.bot.title.trim() !== "" || facts.bot.description.trim() !== "";
+    const apps = facts.connectedApps;
+    const routines = facts.routines.some((routine) => routine.enabled);
+    const webhooks = facts.webhooks.some((webhook) => webhook.enabled);
+    const steps = [
+        { id: "identity", label: "Give it a name and a role", done: named && described, section: "identity" },
+        { id: "soul", label: "Write its standing instructions", done: (facts.bot.soul ?? "").trim() !== "", section: "soul" },
+        { id: "folder", label: "Choose a working folder", done: Boolean(facts.bot.cwd), section: "access" },
+    ];
+    // Apps only count as a step when this bot could use them at all; a
+    // bot on an engine without connected apps is not "missing" them.
+    if (couldUseApps(facts)) {
+        steps.push({
+            id: "apps",
+            label: "Connect the apps it needs",
+            done: apps.authoritative && apps.services.length > 0,
+            section: "access",
+        });
+    }
+    steps.push({ id: "schedule", label: "Add a schedule or a trigger", done: routines || webhooks, section: "routines" });
+    return steps;
+}

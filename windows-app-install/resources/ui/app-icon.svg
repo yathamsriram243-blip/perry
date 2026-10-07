@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" shape-rendering="crispEdges">
+  <defs>
+    <linearGradient id="perryBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8226f5"/>
+      <stop offset="50%" stop-color="#6748f9"/>
+      <stop offset="100%" stop-color="#4e66fb"/>
+    </linearGradient>
+    <filter id="ghostShadow" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="1.8" dy="2.6" stdDeviation="2.2" flood-color="#0a0620" flood-opacity="0.48"/>
+    </filter>
+  </defs>
+  <rect width="120" height="120" rx="27" fill="url(#perryBg)" shape-rendering="geometricPrecision"/>
+  <g transform="translate(32, 32) scale(4)" fill="#ffffff" filter="url(#ghostShadow)">
+    <path fill-rule="evenodd" d="
+      M5,0 H9 V1 H11 V2 H12 V3 H13 V6 H14 V14 H13 V13 H12 V12 H11 V13 H10 V14 H8 V13 H7 V12 H6 V14 H4 V13 H3 V12 H2 V13 H1 V14 H0 V6 H1 V3 H2 V2 H3 V1 H5 Z
+      M2,5 H4 V7 H2 Z
+      M7,5 H9 V7 H7 Z
+    "/>
+  </g>
+</svg>

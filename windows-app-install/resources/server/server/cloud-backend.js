@@ -1,0 +1,26 @@
+export const CLOUD_BACKEND_CHANGE_ERROR = "stop the active turn before changing the cloud backend";
+export const BOAT_ACCOUNT_RESOURCES_ERROR = "remove this installation's cloud computers before changing or clearing the Boat account";
+export const VPS_ALIAS_RESOURCES_ERROR = "remove this installation's VPS computers before changing or clearing the SSH config alias";
+export function cloudBackendChangeError(botBusy, activeVpsThread) {
+    return botBusy || activeVpsThread ? CLOUD_BACKEND_CHANGE_ERROR : null;
+}
+/** An old Boat account may be detached only when it owns no local resources.
+ * Token rotation is safe when the replacement credential proves access to
+ * the exact same provider identities. */
+export function boatAccountResourceChangeError(current, replacement) {
+    if (current.length === 0)
+        return null;
+    if (!replacement || replacement.length !== current.length)
+        return BOAT_ACCOUNT_RESOURCES_ERROR;
+    const identities = (rows) => rows
+        .map(({ boxId, name }) => `${boxId}\u0000${name}`)
+        .sort();
+    const currentIdentities = identities(current);
+    const replacementIdentities = identities(replacement);
+    return currentIdentities.every((identity, index) => identity === replacementIdentities[index])
+        ? null
+        : BOAT_ACCOUNT_RESOURCES_ERROR;
+}
+export function vpsAliasResourceChangeError(instanceCount) {
+    return instanceCount > 0 ? VPS_ALIAS_RESOURCES_ERROR : null;
+}
