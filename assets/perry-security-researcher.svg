@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="96" viewBox="0 0 360 96" role="img" aria-labelledby="title description">
+  <title id="title">Perry Security Researcher</title>
+  <desc id="description">A non-monetary recognition badge for eligible Perry security researchers.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#182b49"/>
+      <stop offset="1" stop-color="#244b73"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="358" height="94" rx="16" fill="url(#background)" stroke="#83c5ee" stroke-width="2"/>
+  <circle cx="50" cy="48" r="27" fill="#83c5ee"/>
+  <path d="M50 27 56 40l14 2-10 10 2 14-12-7-12 7 2-14-10-10 14-2z" fill="#182b49"/>
+  <text x="91" y="43" fill="#fff" font-family="Arial, sans-serif" font-size="19" font-weight="700">PERRY SECURITY</text>
+  <text x="91" y="67" fill="#c9e8fb" font-family="Arial, sans-serif" font-size="15">RESEARCHER</text>
+</svg>
