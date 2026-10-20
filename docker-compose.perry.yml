@@ -1,0 +1,21 @@
+name: perry-omni
+services:
+  perry:
+    build:
+      context: .
+      dockerfile: Dockerfile.perry
+    image: perry-omni:latest
+    container_name: perry-omni
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - perry_data:/data
+    environment:
+      OMB_PORT: "8799"
+      OMB_WEBHOOK_PORT: "8800"
+      OMB_LOOPBACK_TRUST: "owner"
+      PERRY_EXTERNAL_PORT: "8088"
+volumes:
+  perry_data:
+    name: perry_omni_data

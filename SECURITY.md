@@ -1,77 +1,38 @@
 # Security Policy
 
-## Scope
+## Reporting a vulnerability
 
-This policy covers security issues in the Perry source code, packaging, and
-repository-controlled release assets. No live service is designated as an
-authorized testing target by this policy. Do not test systems or services
-unless you own them or have separate, explicit authorization to do so.
+Please **do not open a public issue** for security problems.
 
-Reports should describe a concrete security impact in Perry. Examples include
-an exploitable vulnerability in Perry code or a security-relevant weakness in
-how Perry integrates with a dependency.
+- **Email** **soni.mil2001@gmail.com** with the details.
+- **Or, if it is enabled on this repository,** use GitHub's private vulnerability reporting:
+  <https://github.com/milind-soni/Perry/security/advisories/new>. The report stays visible
+  only to you and the maintainers until a fix is published.
 
-The following are out of scope:
+You'll get a response as soon as possible, normally within a few days.
 
-- Vulnerabilities solely in third-party software or services, unless the
-  report demonstrates a distinct security impact caused by Perry.
-- Third-party infrastructure, accounts, or data, including GitHub and systems
-  not operated by the Perry maintainers.
-- Denial-of-service or resource-exhaustion testing, social engineering,
-  physical attacks, spam, and automated scanner output without a demonstrated
-  security impact.
-- Speculative hardening suggestions or issues that do not affect security.
+## Scope notes for researchers
 
-## How to report
-
-Please disclose suspected vulnerabilities privately and include:
-
-- Affected file, component, version, or commit, if known.
-- A concise description of the issue and its security impact.
-- Reproduction steps and a minimal proof of concept that avoids accessing real
-  user data or causing harm.
-- Any relevant environment details and suggested remediation, if available.
-
-If GitHub private vulnerability reporting is enabled for this repository, use
-the repository's **Security** tab and select **Report a vulnerability** to
-submit an advisory privately. If that option is not available, do not post
-vulnerability details, exploit code, or sensitive data in a public issue or
-discussion. Instead, open a public issue containing only a request for a
-private reporting channel, without describing the vulnerability; wait for
-maintainers to provide a safe private route before sending details.
-
-## Safe-harbor expectations
-
-Research must be conducted in good faith, limited to Perry code or assets in
-scope, and use the least intrusive method needed to demonstrate the issue.
-Stop testing and report promptly if you encounter data that is not yours,
-affect another person's account or service, or risk disrupting availability.
-Do not access, alter, retain, or disclose another person's data; do not use an
-issue to establish persistence, pivot to other systems, or continue testing
-after confirming the vulnerability.
-
-This policy does not authorize testing third-party systems and is not legal
-advice or a guarantee of legal protection. Applicable law and any separate
-authorization still apply.
-
-## Triage and recognition
-
-Maintainers will assess reports as capacity allows and may ask for additional
-details through the private channel. A report is eligible for recognition when
-maintainers confirm a reproducible, in-scope security issue with a security
-impact that was not already known. Recognition is non-monetary: **no cash,
-payment, or other monetary reward is offered**.
-
-Each researcher with a confirmed eligible report receives the Perry security
-contribution badge as non-monetary recognition; **no cash, payment, or other
-monetary reward is offered**. Download the
-[badge image](assets/perry-security-researcher.svg) from this repository to
-use it. Researchers may also be listed in the public
-[Hall of Fame](HALL_OF_FAME.md), but only after they explicitly opt in through
-the private report and confirm the name or handle to display. No name, handle,
-or identifying detail will be published without that opt-in. Recognition does
-not require public attribution; researchers may receive the badge without a
-Hall of Fame listing.
-
-Maintainers determine report validity and recognition eligibility. This
-program does not promise a response or resolution time.
+- The harness server binds **127.0.0.1 only**. Packaged builds allow anonymous loopback reads, but
+  public mutations require either the desktop's private per-launch capability or a paired session;
+  built-in agent integrations use narrower per-turn capabilities. Anything that makes it reachable
+  from off-machine without a paired session, lets one bot reuse another turn's capability, or lets
+  a local *unprivileged other user* drive it is a vulnerability. On a hosted or shared workspace
+  (service loopback trust, see `docs/self-hosting.md`) a session-less loopback caller — which
+  includes every bot's shell — may use only the routes in `SERVICE_ALLOW`
+  (`server/request-auth.ts`); reaching an admin route or approving a card that way is a
+  vulnerability. Known and documented, not yet closed: that caller keeps the Slack worker's
+  guarded routes, so a bot's shell can post into an existing Full-access thread, or open one while
+  shared Full access is on, and get Full-access work done without a card. A worker-only relay token
+  is the planned fix.
+- API keys live in `~/.perry/config.json` and are write-only through the API (`configured`
+  booleans out, never values). Any path that echoes a stored secret back — API response, SSE event,
+  log line, argv visible in `ps` — is a vulnerability.
+- Agents run real CLIs (`claude`, `codex`) with the user's own privileges, and the permission broker
+  is the consent layer for risky actions. Bypasses of the broker (approving without a user decision,
+  spoofing the broker socket) are vulnerabilities unless that bot is explicitly set to **Full
+  access**. Full access is a standing user decision to approve provider permission requests; it must
+  never answer questions or silently broaden product-level confirmations such as credentials,
+  routines, skills, or peer communication.
+- Spawning must never route user-influenced strings through a shell. Report any `shell: true` /
+  `cmd.exe` string-building you find.
